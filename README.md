@@ -104,6 +104,9 @@ aws_region  = "us-east-1"
 key_name    = "comfyui"
 instance_type = "g6.12xlarge"   # or any other G size
 availability_zone = "us-east-1a"
+
+# leave this line out or set to "on-demand" for standard pricing
+#purchase_option  = "spot"
 ```
 
 The file is already ignored by Git.
@@ -214,6 +217,7 @@ Volumes remain because of `skip_destroy = true`.
 | `MaxSpotInstanceCountExceeded`                | Spot quota too low                  | Request a quota increase for **All G and VT Spot Instances**                 |
 | `function env not found` in Terraform         | Wrong syntax                        | Use `pathexpand("~/.ssh/id_ed25519.pub")`                                    |
 | SSH timeout                                   | Security group closed or IP changed | Verify port 22 in inbound rules and check the new public IP after each start |
+| Changing AWS-CLI profile on Windows          | Environment variable not set        | Set `$Env:AWS_PROFILE = "your_aws_profile_name"` in the terminal before running commands |
 
 ---
 

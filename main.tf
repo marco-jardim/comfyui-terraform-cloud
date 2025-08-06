@@ -33,11 +33,15 @@ resource "aws_instance" "comfy" {
   user_data                            = file("${path.module}/userdata/install_comfyui.sh")
   instance_initiated_shutdown_behavior = "stop"
 
-  instance_market_options {
-    market_type = "spot"
-    spot_options {
-      spot_instance_type             = "persistent"
-      instance_interruption_behavior = "stop"
+  # add the market options only when purchase_option == "spot"
+  dynamic "instance_market_options" {
+    for_each = var.purchase_option == "spot" ? [1] : []
+    content {
+      market_type = "spot"
+      spot_options {
+        spot_instance_type             = "persistent"
+        instance_interruption_behavior = "stop"
+      }
     }
   }
 
