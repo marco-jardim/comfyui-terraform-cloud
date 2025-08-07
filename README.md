@@ -1,246 +1,221 @@
-# ComfyUI GPU Spot Stack on AWS
+# ComfyUI GPU Stack on AWS or Cudo Compute
 
-ComfyUI is a powerful node based interface for image and video generation.  
-This project spins up a cost efficient GPU environment on AWS Spot Instances, with persistent EBS volumes for models and media. Terraform automates every resource and a tiny `userdata` script installs and runs ComfyUI at boot.
+ComfyUI is a powerful node‑based interface for image and video generation.  
+This Terraform project provisions a complete GPU environment for ComfyUI on two
+different cloud back‑ends:
+
+* **AWS** — deploys a persistent GPU EC2 instance (defaulting to the G‑family)
+  using cost‑efficient Spot pricing, with separate EBS volumes for model data and
+  generated media.  
+* **Cudo Compute** — provisions a virtual machine equipped with an **NVIDIA RTX A6000**
+  GPU. Separate storage disks are created for models and media, and the VM is
+  destroyed at the end of your work session while the disks persist for the next run.
+
+Both stacks install and launch ComfyUI automatically via a small `userdata`
+script. Volumes survive instance termination so you only pay for the storage
+when the GPU is off.
 
 ## Table of contents
-- [ComfyUI GPU Spot Stack on AWS](#comfyui-gpu-spot-stack-on-aws)
-  - [Table of contents](#table-of-contents)
-  - [1. Overview](#1-overview)
-  - [2. Architecture diagram](#2-architecture-diagram)
-  - [3. Prerequisites](#3-prerequisites)
-  - [4. First-time setup](#4-first-time-setup)
-    - [4.1 Configure the AWS CLI](#41-configure-the-aws-cli)
-    - [4.2 Import your public key into EC2](#42-import-your-public-key-into-ec2)
-    - [4.3 Clone and prepare the repo](#43-clone-and-prepare-the-repo)
-    - [4.4 Initialise Terraform](#44-initialise-terraform)
-    - [4.5 Create the stack](#45-create-the-stack)
-  - [5. Everyday workflow](#5-everyday-workflow)
-  - [6. Starting and stopping the instance](#6-starting-and-stopping-the-instance)
-    - [via AWS CLI](#via-aws-cli)
-    - [via Terraform](#via-terraform)
-  - [7. Managing AWS profiles and key pairs](#7-managing-aws-profiles-and-key-pairs)
-  - [8. Customisation cheatsheet](#8-customisation-cheatsheet)
-  - [9. Troubleshooting](#9-troubleshooting)
-  - [10. Cleaning up](#10-cleaning-up)
-  - [11. License](#11-license)
+
+- [1. Overview](#1-overview)
+- [2. AWS stack](#2-aws-stack)
+- [3. Cudo stack](#3-cudo-stack)
+- [4. Prerequisites](#4-prerequisites)
+- [5. First‑time setup](#5-first-time-setup)
+- [6. Everyday workflow](#6-everyday-workflow)
+- [7. Cleaning up](#7-cleaning-up)
+- [8. License](#8-license)
 
 ---
 
 ## 1. Overview
 
-* One Spot instance of type **g6.12xlarge** or any other G family size you set.  
-* Two GP3 volumes  
-  * `/mnt/models` for checkpoints, LoRAs, VAEs, etc  
-  * `/mnt/media` for generated images and videos  
-* User `ubuntu` runs ComfyUI as a systemd service on port **8188**.  
-* Volumes survive instance stop events, so you only pay for storage when the GPU is off.  
+You now have two options to run ComfyUI in the cloud:
+
+| Option         | GPU type                  | Persistent storage            | Notes |
+|---------------:|:-------------------------:|:------------------------------|:----- |
+| **AWS**        | AWS G‑family (e.g. g6.*) | EBS volumes for models/media | Uses Spot or on‑demand pricing |
+| **Cudo Compute** | NVIDIA RTX A6000         | Storage disks for models/media | VM destroyed when done, disks persist |
+
+Model checkpoints, LoRAs and VAEs are stored on one volume; generated images and
+videos live on another. This separation makes it easy to grow one without
+affecting the other and ensures data survives instance termination【545279181630475†L49-L83】.
 
 ---
 
-## 2. Architecture diagram
+## 2. AWS stack
 
-```mermaid
-graph TD
-    subgraph AWS_Account
-        subgraph VPC["VPC 172.31/16"]
-            subgraph Subnet["Subnet 172.31.0/24"]
-                EC2[EC2 Spot Instance]
-                SG[(Security Group)]
-                EC2 --> SG
-            end
-        end
-        EC2 --> Models
-        EC2 --> Media
-        Models[EBS 500 GiB<br>models]
-        Media[EBS 1000 GiB<br>media]
-    end
-```
+The original Terraform configuration for AWS lives in the `aws/` directory. It
+creates:
 
----
+* An EC2 instance using the latest Deep Learning AMI【206619876762535†L16-L31】.
+* Two GP3 EBS volumes (500 GiB for `/mnt/models` and 1000 GiB for `/mnt/media`)【266417534711484†L54-L55】.
+* A security group exposing SSH and the ComfyUI port 8188【206619876762535†L102-L123】.
+* A tiny userdata script that formats and mounts the volumes, installs
+  dependencies and starts ComfyUI as a systemd service【232503751736464†L0-L57】.
 
-## 3. Prerequisites
-
-| Tool | Minimum version | Install command |
-| :--- | :-------------- | :-------------- |
-| Terraform | 1.6 | <https://developer.hashicorp.com/terraform/downloads> |
-| AWS CLI  | 2.15 | `brew install awscli` or MSI on Windows |
-| Git      | any recent | <https://git-scm.com/downloads> |
-| An SSH key | ED25519 is recommended | `ssh-keygen -t ed25519 -C "comfyui"` |
-
----
-
-## 4. First-time setup
-
-### 4.1 Configure the AWS CLI
+To deploy the AWS stack:
 
 ```bash
-aws configure --profile your_aws_profile_name
-````
-
-Enter the Access Key, Secret Key and default region `us-east-1`.
-
-### 4.2 Import your public key into EC2
-
-```bash
-aws ec2 import-key-pair \
-  --key-name comfyui \
-  --public-key-material fileb://~/.ssh/id_ed25519.pub \
-  --profile your_aws_profile_name --region us-east-1
-```
-
-### 4.3 Clone and prepare the repo
-
-```bash
-git clone https://github.com/yourname/comfyui-terraform-spot-instance.git
-cd comfyui-terraform-spot-instance
-```
-
-Copy **`secrets.auto.tfvars.example`** to **`secrets.auto.tfvars`** and fill:
-
-```hcl
-aws_profile = "your_aws_profile_name"
-aws_region  = "us-east-1"
-key_name    = "comfyui"
-instance_type = "g6.12xlarge"   # or any other G size
-availability_zone = "us-east-1a"
-
-# leave this line out or set to "on-demand" for standard pricing
-#purchase_option  = "spot"
-```
-
-The file is already ignored by Git.
-
-### 4.4 Initialise Terraform
-
-```bash
+cd aws
+cp secrets.auto.tfvars.example secrets.auto.tfvars  # create your secrets file
 terraform init
-terraform fmt     # optional pretty print
-terraform validate
-```
-
-### 4.5 Create the stack
-
-```bash
 terraform apply
 ```
 
-Type **yes** when asked.
-The first run takes about three minutes.
+Populate `secrets.auto.tfvars` with your AWS profile, region and instance type.
+See the comments in that file for guidance.
+
+Stopping and starting the instance via the AWS CLI or the EC2 console leaves
+your volumes intact and avoids compute charges. When you no longer need the
+stack, run `terraform destroy`.
 
 ---
 
-## 5. Everyday workflow
+## 3. Cudo stack
 
-1. `terraform apply -var "instance_type=g6.4xlarge"` to resize if quotas change.
-2. Generate images in ComfyUI at `http://public-ip:8188`.
-3. When done, stop the instance to save money
+The Cudo configuration resides in the `cudo/` directory and provisions a VM
+containing a single **RTX A6000** GPU. Two storage disks are created — one for
+models and one for media — and attached to the VM. When you destroy the VM the
+disks remain, preserving your data for the next run.
 
-   ```bash
-   aws ec2 stop-instances --instance-ids i-xxxxxxxxxxxxxxxxx --profile your_aws_profile_name
-   ```
-4. Start next time with
+Disks default to **100 GiB for models** and **10 GiB for media** when the Cudo
+platform supports resizing; otherwise they grow to **200 GiB and 50 GiB** to
+accommodate future growth without resizing【545279181630475†L49-L83】.
 
-   ```bash
-   aws ec2 start-instances --instance-ids i-xxxxxxxxxxxxxxxxx --profile your_aws_profile_name
-   ```
-
----
-
-## 6. Starting and stopping the instance
-
-### via AWS CLI
+To deploy on Cudo:
 
 ```bash
-# Start
-aws ec2 start-instances --instance-ids i-1234567890abcdef0 --profile your_aws_profile_name
-
-# Stop (billing pauses for compute, volumes keep billing)
-aws ec2 stop-instances --instance-ids i-1234567890abcdef0 --profile your_aws_profile_name
+cd cudo
+cp secrets.auto.tfvars.example secrets.auto.tfvars
+terraform init
+terraform apply
 ```
 
-### via Terraform
+Your `secrets.auto.tfvars` in `cudo/` should define:
 
-```bash
-terraform apply -target=aws_instance.comfy  # creates or starts
-terraform destroy -target=aws_instance.comfy  # terminates instance only
+```hcl
+cudo_api_key       = "your-api-key"
+cudo_project_id    = "project-uuid"
+cudo_data_center_id = "gb-bournemouth-1"  # or whichever datacenter is closest
+
+# Optional overrides
+cudo_vcpus         = 8
+cudo_memory_gib    = 32
+cudo_gpu_count     = 1
+cudo_resizable_disks = true
 ```
 
-Volumes remain because of `skip_destroy = true`.
+You can adjust `cudo_image_id` and disk sizes if needed. The GPU model defaults
+to **RTX A6000** via the `cudo_gpu_model` variable, and Cudo Compute will
+automatically choose an appropriate CPU and memory configuration. The base
+image defaults to **Ubuntu 22.04** with preinstalled NVIDIA drivers and Docker
+(image ID `ubuntu-2204-nvidia-550-docker-v20250303`)【291726256184474†L114-L118】.
+Override `cudo_image_id` only if your data centre offers a different OS or
+driver version. See `cudo/variables.tf` for all available options.
+
+When running the Cudo stack the VM is terminated when you call
+`terraform destroy`, but the `cudo_storage_disk` resources are retained by
+default thanks to the `prevent_destroy` lifecycle rule. This behaviour mirrors
+the AWS stack where volumes survive instance termination【545279181630475†L49-L83】.
 
 ---
 
-## 7. Managing AWS profiles and key pairs
+## 4. Prerequisites
 
-* List profiles
-
-  ```bash
-  aws configure list-profiles
-  ```
-* Switch profile for Terraform
-
-  ```bash
-  export AWS_PROFILE=myotherprofile
-  ```
-* List key pairs
-
-  ```bash
-  aws ec2 describe-key-pairs --query "KeyPairs[*].KeyName" --region us-east-1
-  ```
-* Delete a key
-
-  ```bash
-  aws ec2 delete-key-pair --key-name oldkey --region us-east-1
-  ```
+| Tool        | Minimum version | Install command              |
+| :---------- | :-------------- | :--------------------------- |
+| Terraform   | 1.6            |                             |
+| AWS CLI     | 2.15           | `brew install awscli` or MSI |
+| Cudo account | —             | [Create on Cudo Compute](https://www.cudocompute.com/) |
+| Git         | any recent     |                             |
+| SSH key     | ED25519 recommended | `ssh-keygen -t ed25519 -C "comfyui"` |
 
 ---
 
-## 8. Customisation cheatsheet
+## 5. First‑time setup
 
-| What to change    | How                                                                      |
-| :---------------- | :----------------------------------------------------------------------- |
-| GPU size          | `instance_type` variable                                                 |
-| Region or AZ      | `aws_region` and `availability_zone` variables, plus update volume zones |
-| Model volume size | `size` in `aws_ebs_volume.models`                                        |
-| Media volume size | `size` in `aws_ebs_volume.media`                                         |
-| Extra ports       | add more `ingress` blocks in the security group                          |
+1. **Configure providers**  
+   *AWS*: run `aws configure --profile your_aws_profile_name` and import your
+   public key into EC2.  
+   *Cudo*: generate an API key and create a project via the Cudo web console.
 
----
+2. **Prepare the repository**  
+   Clone this repo and navigate into either the `aws` or `cudo` directory
+   depending on your chosen platform.
 
-## 9. Troubleshooting
+3. **Create and edit `secrets.auto.tfvars`**  
+   Copy the provided example file and fill in the variables for your chosen
+   platform.
 
-| Symptom                                       | Cause                               | Fix                                                                          |
-| :-------------------------------------------- | :---------------------------------- | :--------------------------------------------------------------------------- |
-| `Blocked: This account is currently blocked…` | Account not fully verified          | Open a support ticket under **Account and billing → Account**                |
-| `InvalidKeyPair.NotFound`                     | Key name mismatch                   | Run `aws ec2 import-key-pair` or update `key_name`                           |
-| `No default VPC`                              | New accounts come with none         | This repo creates its own VPC, ensure `vpc_id` is set on security group      |
-| `MaxSpotInstanceCountExceeded`                | Spot quota too low                  | Request a quota increase for **All G and VT Spot Instances**                 |
-| `function env not found` in Terraform         | Wrong syntax                        | Use `pathexpand("~/.ssh/id_ed25519.pub")`                                    |
-| SSH timeout                                   | Security group closed or IP changed | Verify port 22 in inbound rules and check the new public IP after each start |
-| Changing AWS-CLI profile on Windows          | Environment variable not set        | Set `$Env:AWS_PROFILE = "your_aws_profile_name"` in the terminal before running commands |
+4. **Initialise and apply**  
+   Run `terraform init` and `terraform apply`, confirming with `yes` when prompted.
+
+The first run can take a few minutes while the VM is created, volumes are
+provisioned and ComfyUI is installed.
 
 ---
 
-## 10. Cleaning up
+## 6. Everyday workflow
+
+Once deployed, access ComfyUI at `http://public-ip:8188` in your browser.
+
+- **Resize the GPU** (AWS only): change `instance_type` in your variables file
+  and run `terraform apply -var "instance_type=g6.4xlarge"`.
+- **Stop billing**:  
+  *AWS*: stop the instance via the AWS CLI or console; volumes remain attached.  
+  *Cudo*: destroy the VM with `terraform destroy`; the disks persist thanks to
+  `prevent_destroy`.
+- **Restart later**:  
+  *AWS*: start the instance again and reconnect.  
+  *Cudo*: re‑apply the Terraform stack; it will reuse the existing disks.
+
+---
+
+## 7. Cleaning up
+### Destroying only the compute resources
+
+Both stacks are designed so that your model and media volumes survive instance
+termination.  When you call `terraform destroy` without any extra flags,
+Terraform will delete the compute instance and detach the disks/volumes but
+will **not** remove the underlying storage:
+
+| Provider | How it preserves storage |
+|---------:|:-------------------------|
+| **AWS**  | The volume attachments use `skip_destroy = true`, so destroying
+  the instance simply detaches the EBS volumes and leaves them intact. |
+| **Cudo** | The `cudo_storage_disk` resources include a `prevent_destroy`
+  lifecycle rule【774582159873390†L27-L30】. Terraform detaches the disks
+  automatically but refuses to delete them. |
+
+To destroy **only** the compute resources, run:
 
 ```bash
 terraform destroy
 ```
 
-All resources are removed.
-If you want to keep volumes only:
+This will shut down the VM and detach the storage.  The next time you apply
+the stack the existing volumes/disks will be reattached and your data will be
+available again.
+
+### Removing all resources
+
+If you really want to delete the persistent volumes as well, you can either
+remove the lifecycle hooks and attachments from the Terraform code or force
+Terraform to target the volumes.  For example:
 
 ```bash
-terraform destroy \
-  -target=aws_instance.comfy \
-  -target=aws_security_group.comfy
+# Remove prevent_destroy in cudo/main.tf and/or skip_destroy in aws/main.tf,
+# then run:
+terraform destroy
 ```
+
+Alternatively you can delete the disks manually in the AWS or Cudo web
+consoles after running `terraform destroy`.
 
 ---
 
-## 11. License
+## 8. License
 
 MIT License unless stated otherwise.
 Feel free to fork and improve.
-
-```

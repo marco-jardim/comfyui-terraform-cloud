@@ -140,6 +140,6 @@ resource "aws_key_pair" "comfy" {
   key_name   = "comfyui-aws" # name that will appear in the account
   public_key = file(pathexpand("~/.ssh/id_ed25519.pub"))
   #                           └── Terraform expands ~ to:
-  #                               C:\Users\<you> on Windows
+  #                               C:\\Users\\<you> on Windows
   #                               /home/<you>    on Linux
 }

@@ -20,7 +20,9 @@ variable "aws_profile" {
   type = string
 }
 
-variable "aws_region" { type = string }
+variable "aws_region" {
+  type = string
+}
 
 # "spot" = persistent Spot instance
 # "on-demand" (or empty) = normal billing
