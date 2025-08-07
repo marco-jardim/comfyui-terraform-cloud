@@ -54,6 +54,16 @@ python3 -m venv /opt/ComfyUI/venv
 /opt/ComfyUI/venv/bin/pip install --upgrade wheel
 /opt/ComfyUI/venv/bin/pip install -r /opt/ComfyUI/requirements.txt
 
+# Install the ComfyUI Manager plugin. This custom node adds a management
+# interface that can download missing checkpoints, LoRAs and other assets
+# directly to /mnt/models and its subdirectories. Without this plugin,
+# clicking on download links will initiate a download on your local machine.
+PLUGIN_DIR="/opt/ComfyUI/custom_nodes/ComfyUI-Manager"
+if [ ! -d "$PLUGIN_DIR" ]; then
+  mkdir -p "/opt/ComfyUI/custom_nodes"
+  git clone https://github.com/ltdrdata/ComfyUI-Manager.git "$PLUGIN_DIR"
+fi
+
 # Simple systemd service to start ComfyUI on boot. Only write the unit file if
 # it doesn't already exist to avoid overwriting customisations.
 SERVICE_FILE=/etc/systemd/system/comfyui.service
