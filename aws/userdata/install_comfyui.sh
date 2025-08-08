@@ -19,6 +19,10 @@ mount /dev/nvme2n1 /mnt/media
 echo '/dev/nvme2n1 /mnt/media ext4 defaults,nofail 0 2' >> /etc/fstab
 chown ubuntu:ubuntu /mnt/media
 
+# Diretório persistente para custom nodes
+CUSTOM_NODES_DIR="/mnt/models/custom_nodes"
+mkdir -p "$CUSTOM_NODES_DIR"
+
 # Install basic dependencies
 apt-get update
 apt-get -y install \
@@ -38,10 +42,23 @@ python3 -m venv /opt/ComfyUI/venv
 # interface that can download missing checkpoints, LoRAs and other assets
 # directly to /mnt/models and its subdirectories. Without this plugin,
 # clicking on download links will initiate a download on your local machine.
+# Instala o ComfyUI‑Manager para gerenciar checkpoints, LoRAs, VAEs etc.
 PLUGIN_DIR="/opt/ComfyUI/custom_nodes/ComfyUI-Manager"
 if [ ! -d "$PLUGIN_DIR" ]; then
-  mkdir -p "/opt/ComfyUI/custom_nodes"
-  git clone https://github.com/ltdrdata/ComfyUI-Manager.git "$PLUGIN_DIR"
+    mkdir -p "/opt/ComfyUI/custom_nodes"
+    git clone https://github.com/ltdrdata/ComfyUI-Manager.git "$PLUGIN_DIR"
+fi
+
+# Instala o AutoDownloadModels para baixar automaticamente modelos ausentes
+AUTO_PLUGIN_DIR="/opt/ComfyUI/custom_nodes/ComfyUI_AutoDownloadModels"
+if [ ! -d "$AUTO_PLUGIN_DIR" ]; then
+    git clone https://github.com/AIExplorer25/ComfyUI_AutoDownloadModels.git "$AUTO_PLUGIN_DIR" || true
+fi
+
+# Instala o LoRA Manager para visualizar, baixar e organizar LoRAs via interface /loras
+LORA_PLUGIN_DIR="/opt/ComfyUI/custom_nodes/ComfyUI-Lora-Manager"
+if [ ! -d "$LORA_PLUGIN_DIR" ]; then
+    git clone https://github.com/willmiao/ComfyUI-Lora-Manager.git "$LORA_PLUGIN_DIR" || true
 fi
 
 # Simple systemd service

@@ -4,6 +4,7 @@ terraform {
   required_providers {
     cudo = {
       source = "CudoVentures/cudo"
+      version = ">= 0.9.0"
     }
   }
 }
@@ -46,7 +47,7 @@ resource "cudo_storage_disk" "media" {
     prevent_destroy = true
   }
 }
-
+#ddf7c83d55bb9eb4c3647caecd9a1654
 # --- VM -------------------------------------------------------------------
 resource "cudo_vm" "comfy" {
   id             = "comfyui"
@@ -78,9 +79,16 @@ resource "cudo_vm" "comfy" {
   }
 }
 
+
 output "public_ip" {
   value = cudo_vm.comfy.external_ip_address
 }
+
+output "comfyui_url" {
+  value       = "http://${cudo_vm.comfy.external_ip_address}:8188"
+  description = "Endereço HTTP para acessar o ComfyUI"
+}
+
 
 # --- Security group que libera SSH e ComfyUI ------------------------------
 resource "cudo_security_group" "comfy_sg" {
