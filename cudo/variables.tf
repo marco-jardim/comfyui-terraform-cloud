@@ -29,11 +29,9 @@ variable "cudo_memory_gib" {
 }
 
 variable "cudo_gpu_model" {
-  description = "GPU model name. The default selects the NVIDIA RTX A6000. Use the exact case and spacing returned by the provider (\"RTX A6000\")."
+  description = "GPU model name. The default selects the NVIDIA A100 PCIe. Use the exact case and spacing returned by the provider (\"A100 PCIe\")."
   type        = string
-  # The provider returns the model name in title case with a space ("RTX A6000").
-  # Setting the default accordingly avoids an inconsistency error during apply.
-  default     = "RTX A6000"
+  default     = "A100 PCIe"
 }
 
 variable "cudo_gpu_count" {
@@ -66,7 +64,15 @@ variable "cudo_resizable_disks" {
 }
 
 variable "cudo_machine_type" {
-  description = "Machine type to use for the Cudo VM. Defaults to a machine with an Intel Broadwell CPU and an RTX A6000 GPU."
+  description = "Machine type to use for the Cudo VM. Defaults to an Ice Lake host paired with an NVIDIA A100 PCIe GPU."
   type        = string
-  default     = "ice-lake-rtx-a6000"
+  default     = "intel-ice-lake-a100-pci"
 }
+
+variable "huggingface_token" {
+  description = "Optional Hugging Face access token used to download gated models during bootstrap."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+

@@ -3,8 +3,8 @@ terraform {
 
   required_providers {
     cudo = {
-      source = "CudoVentures/cudo"
-      version = ">= 0.9.0"
+      source  = "CudoVentures/cudo"
+      version = ">= 0.11.2"
     }
   }
 }
@@ -23,40 +23,37 @@ provider "cudo" {
 # accommodate future growth without resizing.
 locals {
   models_size_gib = var.cudo_resizable_disks ? 100 : 200
-  media_size_gib  = var.cudo_resizable_disks ? 10  : 50
+  media_size_gib  = var.cudo_resizable_disks ? 10 : 50
 }
 
 # Persistant disk for models (checkpoints, LoRAs, etc).
 resource "cudo_storage_disk" "models" {
   id             = "comfy-models"
   data_center_id = var.cudo_data_center_id
+  project_id     = var.cudo_project_id
   size_gib       = local.models_size_gib
 
-  lifecycle {
-    prevent_destroy = true
-  }
+
 }
 
 # Persistant disk for generated media.
 resource "cudo_storage_disk" "media" {
   id             = "comfy-media"
   data_center_id = var.cudo_data_center_id
+  project_id     = var.cudo_project_id
   size_gib       = local.media_size_gib
 
-  lifecycle {
-    prevent_destroy = true
-  }
+
 }
 #ddf7c83d55bb9eb4c3647caecd9a1654
 # --- VM -------------------------------------------------------------------
 resource "cudo_vm" "comfy" {
-  id             = "comfyui"
+  id             = "comfyui-a100"
   data_center_id = var.cudo_data_center_id
 
   vcpus        = var.cudo_vcpus
   memory_gib   = var.cudo_memory_gib
   machine_type = var.cudo_machine_type
-  gpu_model    = var.cudo_gpu_model
   gpus         = var.cudo_gpu_count
 
   boot_disk = {
@@ -66,12 +63,11 @@ resource "cudo_vm" "comfy" {
 
   storage_disks = [
     { disk_id = cudo_storage_disk.models.id },
-    { disk_id = cudo_storage_disk.media.id  }
+    { disk_id = cudo_storage_disk.media.id }
   ]
 
-  security_group_ids = [cudo_security_group.comfy_sg.id]   # <‑‑ associação aqui
-  ssh_key_source     = "project"
-  start_script       = file("${path.module}/userdata/install_comfyui.sh")
+  security_group_ids = [cudo_security_group.comfy_sg.id]
+  start_script       = replace(file("${path.module}/userdata/install_comfyui.sh"), "__HF_TOKEN__", var.huggingface_token)
 
   # (se ainda precisar contornar o bug do provider)
   lifecycle {
@@ -92,8 +88,8 @@ output "comfyui_url" {
 
 # --- Security group que libera SSH e ComfyUI ------------------------------
 resource "cudo_security_group" "comfy_sg" {
-  id             = "comfy-sg"                # nome legível no painel
-  data_center_id = var.cudo_data_center_id   # mesmo DC da VM
+  id             = "comfy-a100-sg"         # nome legível no painel
+  data_center_id = var.cudo_data_center_id # mesmo DC da VM
 
   description = "Ingress SSH 22 and ComfyUI 8188"
 
@@ -103,14 +99,14 @@ resource "cudo_security_group" "comfy_sg" {
       rule_type = "inbound"
       protocol  = "tcp"
       ports     = "22"
-      ip_range  = "0.0.0.0/0" 
+      ip_range  = "0.0.0.0/0"
     },
     # Inbound – ComfyUI
     {
       rule_type = "inbound"
       protocol  = "tcp"
       ports     = "8188"
-      ip_range  = "0.0.0.0/0"  
+      ip_range  = "0.0.0.0/0"
     },
     # Outbound – tudo liberado
     {
