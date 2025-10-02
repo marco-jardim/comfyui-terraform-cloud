@@ -270,6 +270,72 @@ mkdir -p /mnt/models/embeddings
 mkdir -p /mnt/models/vae
 mkdir -p /mnt/models/controlnet 
 mkdir -p /mnt/models/diffusion_models
+mkdir -p /mnt/models/upscale_models
+mkdir -p /mnt/models/unet
+
+# Symlink ComfyUI model folders to the persistent volume so downloads/installers
+# always land on /mnt/models and survive VM re-creation.
+link_model_dir() {
+  local subdir="$1"
+  local persistent="/mnt/models/$subdir"
+  local comfy_path="/opt/ComfyUI/models/$subdir"
+
+  mkdir -p "$persistent"
+  rm -rf "$comfy_path"
+  ln -snf "$persistent" "$comfy_path"
+}
+
+for dir in \
+  checkpoints \
+  clip \
+  clip_vision \
+  controlnet \
+  diffusion_models \
+  embeddings \
+  hypernetworks \
+  loras \
+  text_encoders \
+  upscale_models \
+  vae \
+  vae_approx \
+  audio_encoders \
+  configs \
+  unet; do
+  link_model_dir "$dir"
+done
+
+cat >/opt/ComfyUI/extra_model_paths.yaml <<'YAML'
+checkpoints:
+  - /mnt/models/checkpoints
+diffusion_models:
+  - /mnt/models/diffusion_models
+text_encoders:
+  - /mnt/models/text_encoders
+loras:
+  - /mnt/models/loras
+vae:
+  - /mnt/models/vae
+vae_approx:
+  - /mnt/models/vae_approx
+controlnet:
+  - /mnt/models/controlnet
+embeddings:
+  - /mnt/models/embeddings
+unet:
+  - /mnt/models/unet
+upscale_models:
+  - /mnt/models/upscale_models
+hypernetworks:
+  - /mnt/models/hypernetworks
+audio_encoders:
+  - /mnt/models/audio_encoders
+clip:
+  - /mnt/models/clip
+clip_vision:
+  - /mnt/models/clip_vision
+configs:
+  - /mnt/models/configs
+YAML
 
 ################################################################################
 # 8. Download automático de modelos base comuns

@@ -88,7 +88,7 @@ output "comfyui_url" {
 
 # --- Security group que libera SSH e ComfyUI ------------------------------
 resource "cudo_security_group" "comfy_sg" {
-  id             = "comfy-a100-sg"         # nome legível no painel
+  id             = "comfy-a100-sg"               # nome legível no painel
   data_center_id = var.cudo_data_center_id # mesmo DC da VM
 
   description = "Ingress SSH 22 and ComfyUI 8188"
